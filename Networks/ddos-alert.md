@@ -47,8 +47,7 @@ index=firewall action=allowed OR action=blocked
 ```
 
 ⸻
-
-L2 — Deep Investigation & Correlation
+### L2 — Deep Investigation & Correlation
 
 1. Firewall / IDS Logs
 	•	Look for high-volume connections from single or multiple IPs

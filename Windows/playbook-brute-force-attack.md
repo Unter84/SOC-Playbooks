@@ -25,7 +25,7 @@ A brute force attack is when an adversary attempts **multiple login attempts** i
 
 ## 🧭 Analyst Actions (L1 → L2 → L3)
 
-### L1 — Initial Triage
+## L1 — Initial Triage
 - ✅ Identify the **target account(s)** under attack.  
 - ✅ Review source IPs and geolocation (single or multiple?).  
 - ✅ Count the number of failed attempts and timeframe.  

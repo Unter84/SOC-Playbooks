@@ -1,6 +1,3 @@
-Perfect — a **Brute Force Attack** playbook is one of the most fundamental and critical ones to have in your SOC GitHub repo.
-Below is the **GitHub-ready markdown playbook**, complete with **SPL queries**, correlation checks across multiple log sources, MITRE mappings, and RCA/recommendations.
-
 ````markdown
 # 🛡️ Playbook: Brute Force Attack (Multiple Failed Logins)
 

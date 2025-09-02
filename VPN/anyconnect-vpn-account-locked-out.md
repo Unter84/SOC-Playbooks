@@ -7,131 +7,162 @@
 ---
 
 ## 🎯 Alert Context — Why this matters
-Account lockouts during VPN authentication can indicate:
-- **Brute force or password spraying** attempts against remote access infrastructure  
+VPN account lockouts can indicate:
+- **Brute force / password spray** attempts targeting remote access  
+- **Compromised accounts** being probed by attackers  
 - **Misconfigured clients** (stale credentials cached in AnyConnect)  
-- **Compromised accounts** being tested by adversaries  
-- **User behavior issues** (typing errors, expired password)  
+- **User error** (wrong/expired password, multiple devices with old credentials)  
 
-Because VPN gateways provide **direct remote access to internal systems**, failed attempts and lockouts must be carefully reviewed.
+Since VPN provides a **direct pathway into internal infrastructure**, correlating with other security controls is critical to distinguish between benign misconfigurations and malicious activity.
 
-**Relevant Logs/Sources:**
-- Cisco ASA / FTD / AnyConnect VPN logs  
-- SIEM normalized events (`vpn-login-failed`, `account-lockout`)  
-- Windows AD logs (4740 = account locked out)  
-- Identity provider logs (if integrated with SAML, Radius, Duo, Okta, Entra ID)
+**Relevant Events:**
+- **Cisco ASA/FTD/AnyConnect logs** → failed logins, lockouts  
+- **Windows AD logs** → 4740 (account locked out), 4625 (failed logon)  
+- **IdP logs (Duo, Okta, Entra ID)** → failed authentications, MFA denials  
 
 ---
 
 ## 🧭 Analyst Actions (L1 → L2 → L3)
 
 ### L1 — Initial Triage
-- ✅ Confirm the username/account that was locked out  
-- ✅ Check the VPN log source (Cisco ASA/FTD) for multiple failed attempts leading to lockout  
-- ✅ Review timestamp — was this during business hours or unusual/off-hours?  
-- ✅ Identify the **source IP(s)** from which the login attempts originated  
-- ✅ Cross-check with Active Directory event 4740 (account lockout) if integrated  
+- ✅ Identify the user/account locked out  
+- ✅ Extract IP, device type, and geolocation from VPN logs  
+- ✅ Correlate with AD 4740 event (account lockout confirmation)  
+- ✅ Check business context: is the user traveling, working offsite, or on leave?  
 - 🚩 Escalate to L2 if:
-  - Lockout caused by multiple IPs  
-  - Lockout on privileged/critical user  
-  - Repeated lockouts in short period (possible brute force)
+  - Multiple lockouts in short time  
+  - Privileged account affected  
+  - Multiple source IPs involved  
+  - IP reputation shows TOR/VPN hosting/blacklisted ASN  
 
-### L2 — Deep Investigation
-- 🔎 Review authentication pattern:
-  - Single IP with many attempts = brute force  
-  - Multiple IPs with distributed attempts = password spray  
-- 🔎 Correlate IP reputation (check threat intel, geolocation, TOR/VPN hosting ASN)  
-- 🔎 Verify if the account recently changed password or had expired credentials  
-- 🔎 Check AD for previous logon failures (4625 events) tied to this account  
-- 🔎 Review whether MFA was enabled — did MFA block access?  
-- 🔎 Confirm with user/HR if they were actively trying to connect  
+---
+
+### L2 — Deep Investigation & Correlation
+**Correlate across multiple log sources:**
+
+1. **Firewall Logs (Cisco ASA/FTD, Palo Alto, Fortinet)**  
+   - Look for **connection attempts** from the same source IP(s)  
+   - Identify **blocked vs allowed traffic** immediately before/after lockouts  
+   - Look for port scans or anomalous traffic (e.g., to SSH/RDP ports) from the same IP  
+
+2. **Endpoint Detection & Response (EDR/XDR)**  
+   - On user endpoint: failed VPN client authentications in local logs  
+   - Post-lockout: signs of credential theft, malware, keyloggers  
+   - On critical servers: failed logons or service account usage from same source  
+
+3. **Windows Active Directory / Domain Controller Logs**  
+   - 4740 (account locked out) confirms identity store triggered the lockout  
+   - 4625 (failed logons) → review failure reasons (bad password vs expired)  
+   - 4768/4769 (Kerberos ticket requests) → repeated failures could indicate brute force  
+
+4. **Identity Provider (IdP / MFA) Logs**  
+   - Entra ID, Okta, Duo, Ping  
+   - Failed MFA or repeated MFA prompts from unusual IP/device  
+   - Impossible travel alerts  
+
+5. **Web Application / Web Server Logs**  
+   - Look for **login attempts to OWA, Citrix, or SSO portals** from same IP range  
+   - Correlate timestamps to confirm if attacker is probing **multiple entry points**  
+
+6. **Threat Intelligence Sources**  
+   - IP/ASN reputation (known brute force campaigns, TOR exit nodes)  
+   - Darknet chatter (if integrated with TIP)  
+
+---
 
 ### L3 — Confirm & Respond
-- 🛑 If malicious:
-  - Block offending IP(s) at firewall / VPN gateway  
-  - Reset credentials of impacted account; revoke sessions  
-  - Force MFA re-registration and notify user  
-  - Monitor for repeated attempts on other accounts from same IP ranges  
-- ✅ If benign:
-  - Educate user on password resets and VPN login process  
-  - Document misconfiguration (cached creds, expired password, multiple devices)  
-  - Suppress alert only if well understood and recurrently benign
+**If malicious:**
+- 🛑 Contain  
+  - Block source IPs/subnets at VPN gateway and firewall  
+  - Reset and lock account until user identity is verified  
+  - Force password reset and MFA re-registration  
+  - Check for **other accounts targeted** from same IPs  
+- 🔎 Eradicate & Harden  
+  - Review AD logs for **spray attempts across users**  
+  - Hunt for **indicators of compromise** on user’s endpoint  
+- 🔁 Recover  
+  - Restore account access with verified credentials  
+  - Monitor for repeat attempts after containment  
+
+**If benign:**
+- ✅ Document misconfiguration or expired credentials  
+- ✅ Educate user (avoid saving credentials, update cached passwords)  
+- ✅ Tune monitoring to reduce noise (but don’t suppress globally)  
 
 ---
 
 ## 🧩 MITRE ATT&CK Mapping
 - **T1110 – Brute Force** (Password Guessing / Password Spraying)  
-- **T1078 – Valid Accounts** (use of compromised credentials once obtained)  
-- **T1078.004 – Valid Accounts: Cloud Accounts** (if IdP integrated with VPN)  
-- **T1133 – External Remote Services** (exploitation of VPN for access)  
+- **T1078 – Valid Accounts** (use of stolen credentials)  
+- **T1078.004 – Valid Accounts: Cloud Accounts** (if IdP integrated)  
+- **T1133 – External Remote Services** (VPN exploitation)  
 
 ---
 
 ## 📝 Root Cause Analysis (RCA) Template
 
 **1) Executive Summary**  
-- *What happened:* Account `<X>` locked out on AnyConnect VPN gateway  
-- *Impact:* `<User unable to connect / potential brute force detected>`  
+- *What happened:* Account `<X>` was locked out during VPN login attempts  
+- *Impact:* `<Potential brute force attack | User disruption>`  
 - *Disposition:* `<True Positive / False Positive / Benign>`  
 
 **2) Timeline**  
-- T0: Detection of lockout (ASA/FTD/AD logs)  
-- T1: Review of source IPs and number of attempts  
-- T2: User contact / validation  
-- T3: Containment actions taken (IP block, password reset)  
-- T4: Recovery (account unlocked, VPN access restored)  
+- T0: VPN lockout detected  
+- T1: Correlated firewall/IdP/AD logs  
+- T2: User/business validation  
+- T3: Containment actions taken  
+- T4: Recovery  
 
 **3) Root Cause**  
-- Category: `[Brute force attack | Password spraying | Misconfiguration | Expired credentials | User error]`  
+- `[Brute force | Password spray | Expired credentials | Cached credentials | User error]`  
 
 **4) Scope**  
-- Accounts impacted, number of IPs involved, geolocation  
+- Accounts impacted, IP ranges, other services targeted  
 
 **5) Actions Taken**  
-- Containment, eradication, recovery  
+- Containment, eradication, recovery steps  
 
 **6) Preventive Measures**  
-- Harden authentication, enable MFA, tune lockout thresholds  
+- Harden VPN auth, enable MFA, enforce lockout policies  
 
 **7) Lessons Learned**  
-- Gaps in monitoring, thresholds, user awareness  
+- Monitoring gaps, tuning, user awareness needs  
 
 ---
 
 ## 🛡 Recommendations
 
 - **Immediate Containment**
-  - Block malicious IPs and subnets  
-  - Reset and unlock user account only after verification  
-  - Force MFA re-registration if compromised  
+  - Block malicious IPs at VPN/firewall  
+  - Reset affected accounts, revoke active sessions  
+  - Force MFA re-enrollment  
 
 - **Hardening**
-  - Enforce MFA for all VPN logins  
-  - Adjust account lockout thresholds (balance between security & usability)  
-  - Implement adaptive authentication (risk-based, geo-aware policies)  
-  - Enforce password hygiene policies (length, expiration, non-reuse)  
+  - Enforce MFA on all VPN access  
+  - Adaptive authentication (risk/geo-based)  
+  - Strong password policies + lockout thresholds  
+  - Restrict VPN to trusted IPs (geo-blocking if possible)  
 
 - **Monitoring**
-  - Detect repeated lockouts across many accounts (password spray)  
-  - Alert on lockouts from unusual geolocations or TOR exit nodes  
-  - Monitor AD event 4740 in parallel with VPN logs  
+  - Correlate lockouts with firewall logs (brute force attempts)  
+  - Alert on multiple account lockouts from same IP range  
+  - Watch for “low-and-slow” password spray across accounts  
+  - Monitor SSO/OWA/web apps for same IP activity  
 
 - **Process**
-  - User education: avoid saving credentials in VPN client  
-  - Document recurring benign lockouts and whitelist expected behavior  
+  - User awareness training (VPN credential hygiene)  
+  - Document recurring misconfigs to avoid false positives  
 
 ---
 
 ## 📎 Before Escalating to Customer
 
 Include:
-- VPN logs showing failed attempts and lockout  
-- AD event 4740 evidence (if available)  
-- Source IP details (geo, reputation, ASN, TOR/VPN detection)  
-- Account criticality (normal user vs privileged user)  
-- Business/user confirmation outcome  
-- Analyst recommendation (malicious activity blocked vs benign misconfig)
-
----
-
-## 📂 Suggested Repo Structure
+- VPN gateway logs (failed attempts, IPs, device type)  
+- AD event 4740 confirmation  
+- Firewall events from same IPs (scans, failed access attempts)  
+- IdP/MFA logs (MFA failures, impossible travel)  
+- Web server/app logs if attacker probed multiple portals  
+- Threat intel reputation check for IPs  
+- Business/user validation (legit user error vs attack)  
+- Analyst recommendation (contain/block vs benign 

@@ -110,7 +110,7 @@ If False Positive:
 
 ⸻
 
-🧩 MITRE ATT&CK Mapping
+## 🧩 MITRE ATT&CK Mapping
 	•	T1498 – Network Denial of Service
 	•	T1499 – Endpoint Denial of Service
 	•	T1498.001 – Direct Network Flood
@@ -118,7 +118,7 @@ If False Positive:
 
 ⸻
 
-📝 Root Cause Analysis (RCA) Template
+## 📝 Root Cause Analysis (RCA) Template
 
 1) Executive Summary
 	•	What happened: DDoS alert against service <X>
@@ -149,7 +149,7 @@ If False Positive:
 
 ⸻
 
-🛡 Recommendations
+## 🛡 Recommendations
 	Immediate
 	•	Block/blackhole malicious IP ranges
 	•	Engage ISP or DDoS mitigation provider
@@ -168,7 +168,7 @@ If False Positive:
 
 ⸻
 
-📎 Before Escalating to Customer
+## 📎 Before Escalating to Customer
 
 Include:
 	•	Traffic spike details (PPS, bandwidth, duration)

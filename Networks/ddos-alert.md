@@ -151,19 +151,19 @@ If False Positive:
 ⸻
 
 🛡 Recommendations
-	•	Immediate
+	Immediate
 	•	Block/blackhole malicious IP ranges
 	•	Engage ISP or DDoS mitigation provider
 	•	Isolate targeted systems if needed
-	•	Hardening
+	Hardening
 	•	Deploy DDoS protection services (Cloudflare, Akamai, Arbor, AWS/Azure Shield)
 	•	Implement rate limiting (firewall, WAF, reverse proxy)
 	•	Geo-blocking for unused regions
-	•	Monitoring
+	Monitoring
 	•	Build anomaly detection on PPS/connection baselines
 	•	Detect sudden spikes in error logs (500/503)
 	•	Alert on high SYN vs ACK ratios
-	•	Process
+	Process
 	•	Establish escalation to ISP/vendor SOC
 	•	Document expected baselines for critical services
 

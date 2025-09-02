@@ -25,7 +25,7 @@ Impact can include:
 
 ## 🧭 Analyst Actions (L1 → L2 → L3)
 
-### L1 — Initial Triage
+## L1 — Initial Triage
 - ✅ Confirm the **target system** (IP, hostname, service)  
 - ✅ Identify **attack vector** (SYN flood, UDP flood, HTTP flood, DNS amplification)  
 - ✅ Check time range and scale (spike duration, PPS, bandwidth)  
@@ -90,7 +90,7 @@ index=web sourcetype=iis OR sourcetype=apache
 
 ⸻
 
-L3 — Confirm & Respond
+## L3 — Confirm & Respond
 
 If Confirmed DDoS:
 	•	🛑 Contain

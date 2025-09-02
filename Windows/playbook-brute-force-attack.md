@@ -1,4 +1,3 @@
-
 ##🛡️ Playbook: Brute Force Attack (Multiple Failed Logins)
 
 **Filename:** `playbook-brute-force-attack.md`  

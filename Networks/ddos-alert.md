@@ -36,7 +36,7 @@ Impact can include:
   - Critical/public-facing service impacted  
 
 **SPL — Detect sudden spike in traffic (firewall logs):**
-```spl
+```
 index=firewall action=allowed OR action=blocked
 | bin _time span=1m
 | stats count as conn by _time dest_ip
@@ -44,7 +44,7 @@ index=firewall action=allowed OR action=blocked
 | eval threshold=baseline+(deviation*5)
 | where conn > threshold
 | table _time dest_ip conn baseline deviation
-
+```
 
 ⸻
 
@@ -53,28 +53,28 @@ L2 — Deep Investigation & Correlation
 1. Firewall / IDS Logs
 	•	Look for high-volume connections from single or multiple IPs
 	•	Check if packets are incomplete (SYN without ACK)
-
+```spl
 index=firewall OR index=ids
 | stats count by src_ip dest_ip dest_port protocol
 | where count > 1000
-
+```
 2. Web Application Firewall (WAF)
 	•	HTTP floods: excessive GET/POST requests to same URI
 	•	Look for abnormal user-agents or missing headers
-
+```
 index=waf
 | stats count by src_ip http_user_agent cs_uri_stem
 | where count > 500
-
+```
 3. NetFlow / Network Telemetry
 	•	PPS/throughput anomalies on targeted interface
-
+```
 index=netflow
 | bin _time span=1m
 | stats sum(bytes) as total_bytes sum(packets) as total_packets by _time dest_ip
 | eventstats avg(total_packets) as baseline stdev(total_packets) as deviation
 | where total_packets > baseline + (deviation*5)
-
+```
 4. Endpoint / Server Logs
 	•	Resource exhaustion signs: service restarts, kernel TCP backlog full
 	•	Windows: Event ID 2022 (server unable to accept connections)
@@ -83,11 +83,11 @@ index=netflow
 5. Application Logs
 	•	HTTP 503/504/500 errors surging
 	•	Correlate with WAF spikes
-
+```
 index=web sourcetype=iis OR sourcetype=apache
 | stats count by sc_status dest_ip
 | where sc_status IN ("500","503","504")
-
+```
 
 ⸻
 

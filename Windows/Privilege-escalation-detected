@@ -1,0 +1,208 @@
+# 🛡️ Playbook: Privilege Escalation Detected (with Lateral Movement Investigation)
+
+**Filename:** `playbook-privilege-escalation-detected.md`  
+**Category:** Endpoint / Post-Exploitation Detection  
+**Use Case:** Investigating alerts raised when a user or process attempts to escalate privileges on a host (Windows/Linux), including follow-on checks for lateral movement.
+
+---
+
+## 🎯 Alert Context — Why this matters
+Privilege escalation allows attackers to move from a **low-privileged user** to **administrator / SYSTEM / root**.  
+- **Impact:** Full control of the system, ability to disable defenses, steal credentials, and pivot.  
+- **Common attacker behavior:** PrivEsc is often followed by **lateral movement** to spread across the network.  
+
+⚠️ PrivEsc alerts must be treated as **high severity** — even failed attempts may reveal compromise attempts.
+
+**Relevant Detection Sources:**
+- Sysmon (Windows Event IDs 1, 3, 8, 10, 11)  
+- Windows Security logs (4688, 4624, 4648, 4672, 4697)  
+- EDR/XDR telemetry (Defender, CrowdStrike, SentinelOne, etc.)  
+- Linux auditd / journald logs  
+- Firewall and network logs (for RDP, SMB, WinRM, SSH)
+
+---
+
+## 🧭 Analyst Actions (L1 → L2 → L3)
+
+### L1 — Initial Triage
+- ✅ Identify alert source (EDR, SIEM, IDS).  
+- ✅ Capture details: host, user, source process, target process, timestamp.  
+- ✅ Confirm if escalation attempt **succeeded or failed**.  
+- ✅ Determine whether host is critical (DC, production server).  
+- 🚩 Escalate to L2 if:
+  - Escalation succeeded.  
+  - Admin/SYSTEM/root account targeted.  
+  - Source process is suspicious (`powershell.exe`, `cmd.exe`, `python.exe`, `mshta.exe`).  
+
+**SPL — Quick triage (elevated process creation)**
+```spl
+index=wineventlog EventCode=4688
+| eval elevated=if(IntegrityLevel="High" OR IntegrityLevel="System","Yes","No")
+| search elevated="Yes"
+| table _time host User ProcessName CommandLine ParentProcessName elevated
+
+
+⸻
+
+L2 — Deep Investigation
+
+1. Process Lineage
+	•	Review parent/child process chain for the escalated process.
+
+index=sysmon EventCode=1 host=<HOST> ProcessId=<SourceProcessId>
+| table _time Image CommandLine ParentImage ParentCommandLine User IntegrityLevel
+
+2. PrivEsc Techniques
+	•	UAC bypass: fodhelper.exe, eventvwr.exe, sdclt.exe.
+	•	Service abuse: new services/scheduled tasks.
+	•	Token manipulation: SeDebugPrivilege.
+	•	Driver exploits.
+
+index=sysmon EventCode=10 TargetImage="*lsass.exe"
+| table _time SourceImage TargetImage GrantedAccess CallTrace
+
+3. Account Context
+	•	Was a normal user suddenly performing privileged actions?
+	•	Correlate with logon events.
+
+index=wineventlog (EventCode=4624 OR EventCode=4648) host=<HOST> 
+| search TargetUserName=<User>
+| table _time TargetUserName LogonType IpAddress AuthenticationPackageName
+
+
+⸻
+
+L2 — Lateral Movement Checks
+
+After PrivEsc, always check for signs of pivoting:
+
+A) Suspicious Logons From Host
+	•	Check if the escalated account accessed other systems.
+
+index=wineventlog EventCode=4624 host!=<ORIGINAL_HOST>
+| search AccountName=<EscalatedUser>
+| table _time host AccountName LogonType IpAddress AuthenticationPackageName
+
+B) Remote Admin Tool Usage
+	•	PsExec, WMI, WinRM, RDP, schtasks.
+
+index=sysmon EventCode=1 host=<ORIGINAL_HOST>
+| search Image IN ("*psexec.exe","*wmic.exe","*schtasks.exe","*winrm*","*mstsc.exe")
+| table _time host User Image CommandLine ParentImage
+
+C) Lateral Network Connections
+	•	Outbound SMB, RDP, SSH from compromised host.
+
+index=sysmon EventCode=3 host=<ORIGINAL_HOST>
+| search dest_port IN (445,3389,5985,5986,22)
+| table _time host ProcessName dest_ip dest_port Protocol
+
+D) Credential Dumping Indicators
+	•	LSASS access (Sysmon 10) or suspicious DLL loads (Sysmon 11).
+
+index=sysmon EventCode=10 TargetImage="*lsass.exe" host=<ORIGINAL_HOST>
+| table _time SourceImage TargetImage GrantedAccess
+
+E) Kerberos Abuse / Pass-the-Hash
+	•	Abnormal Kerberos tickets (4769, 4624 with NTLM).
+
+⸻
+
+L3 — Confirm & Respond
+
+If Malicious (True Positive):
+	•	🛑 Contain
+	•	Isolate host.
+	•	Suspend/kill malicious process.
+	•	🔎 Eradicate
+	•	Collect forensic evidence (memory, binaries).
+	•	Remove persistence (services, scheduled tasks).
+	•	🔁 Recover
+	•	Reimage/rebuild system.
+	•	Reset compromised credentials.
+	•	Monitor for lateral movement across network.
+
+If Benign (False Positive):
+	•	✅ Legitimate admin or security tool activity.
+	•	✅ Document and whitelist expected behaviors.
+
+⸻
+
+🧩 MITRE ATT&CK Mapping
+	•	Privilege Escalation
+	•	T1068 – Exploitation for Privilege Escalation
+	•	T1548 – Abuse Elevation Control Mechanism (UAC bypass)
+	•	T1134 – Access Token Manipulation
+	•	Credential Access
+	•	T1003 – OS Credential Dumping (LSASS, SAM, DPAPI)
+	•	Lateral Movement
+	•	T1021 – Remote Services (SMB, RDP, SSH, WinRM)
+	•	T1077 – Windows Admin Shares
+	•	T1075 – Pass the Hash
+	•	T1550 – Use of Stolen Tokens
+
+⸻
+
+📝 Root Cause Analysis (RCA) Template
+
+1) Executive Summary
+	•	What happened: Privilege escalation attempt detected on host <X>.
+	•	Impact: <Succeeded | Failed>.
+	•	Disposition: <True Positive | False Positive>.
+
+2) Timeline
+	•	T0: Alert triggered.
+	•	T1: PrivEsc process lineage reviewed.
+	•	T2: Account/logon correlation checked.
+	•	T3: Lateral movement investigation (network + logons).
+	•	T4: Containment/remediation actions taken.
+
+3) Root Cause
+	•	[Exploit | Misuse | Legitimate admin activity | Security agent behavior].
+
+4) Scope
+	•	Hosts, accounts affected, lateral movement evidence.
+
+5) Actions Taken
+	•	Containment, eradication, recovery.
+
+6) Preventive Measures
+	•	Patching, least privilege, disabling local admin, lateral segmentation.
+
+7) Lessons Learned
+	•	Improve correlation between PrivEsc + lateral movement in SIEM.
+
+⸻
+
+🛡 Recommendations
+	•	Immediate
+	•	Isolate affected host.
+	•	Block malicious binaries.
+	•	Reset affected accounts.
+	•	Hardening
+	•	Patch OS & drivers.
+	•	Restrict local admin rights.
+	•	Disable NTLM, enforce SMB signing, deploy LSA protection.
+	•	Segment network to block workstation-to-workstation RDP/SMB.
+	•	Monitoring
+	•	Alert on:
+	•	UAC bypass binaries (fodhelper.exe, eventvwr.exe, etc.)
+	•	New services/scheduled tasks from non-admins.
+	•	Outbound SMB/RDP from workstations.
+	•	LSASS access attempts.
+	•	Baseline legitimate security tools to reduce noise.
+	•	Process
+	•	Maintain playbooks linking PrivEsc to Lateral Movement.
+	•	Use honeytoken accounts for credential theft detection.
+
+⸻
+
+📎 Before Escalating to Customer
+
+Provide:
+	•	Host, user, timestamp of PrivEsc attempt.
+	•	Process lineage and command line.
+	•	Whether escalation succeeded.
+	•	Lateral movement evidence (new logons, SMB/RDP/WinRM/SSH).
+	•	TI results for involved binaries.
+	•	Recommendations for containment and hardening.

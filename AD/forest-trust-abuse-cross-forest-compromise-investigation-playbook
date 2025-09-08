@@ -1,10 +1,10 @@
-# 🛡️ Incident Response Playbook – Bidirectional Forest Trust Abuse
+# 🛡️ Forest Trust Abuse – Cross-Forest Compromise Investigation Playbook
 
 ## 📖 Scenario
 Two companies have merged and established a **bidirectional Active Directory forest trust**.  
 Attackers are exploiting this trust to move laterally, exfiltrate sensitive data, and establish persistence across the combined infrastructure.
 
-This playbook provides **step-by-step investigation methods** and **log source correlation** to detect and analyze adversary activity.
+This playbook provides **step-by-step investigation methods**, including **DCSync abuse detection**, and **log source correlation** to detect and analyze adversary activity.
 
 ---
 
@@ -12,7 +12,8 @@ This playbook provides **step-by-step investigation methods** and **log source c
 1. Identify how the adversary gained access in the first forest.  
 2. Determine how they are abusing the bidirectional trust.  
 3. Detect lateral movement and privilege escalation across both forests.  
-4. Contain persistence mechanisms and cut off exfiltration channels.  
+4. Detect **DCSync replication abuse** and credential theft.  
+5. Contain persistence mechanisms and cut off exfiltration channels.  
 
 ---
 
@@ -34,8 +35,8 @@ This playbook provides **step-by-step investigation methods** and **log source c
 
 | Source | What to Look For |
 |--------|------------------|
-| **Windows Security Logs (Domain Controllers)** | Event ID 4624 (Logon), 4769 (Kerberos TGS), 4771 (Kerberos pre-auth failures), 4728/4732 (Group membership changes) |
-| **Active Directory Replication Logs** | Suspicious replication requests, DCSync (Event ID 4662 with DS-Replication-Get-Changes) |
+| **Windows Security Logs (Domain Controllers)** | Event ID 4624 (Logon), 4769 (Kerberos TGS), 4771 (Kerberos pre-auth failures), 4728/4732 (Group membership changes), 4662 (Directory replication requests) |
+| **Active Directory Replication Logs** | Suspicious replication requests (DCSync) |
 | **Firewall / Network Logs** | Unusual traffic between forests (Kerberos 88/TCP, LDAP 389, LDAPS 636, SMB 445, RDP 3389) |
 | **SIEM Correlation** | Accounts authenticating to both forests within short timeframes |
 | **Endpoint Detection (EDR)** | Lateral movement tools (Mimikatz, Rubeus, BloodHound, PowerShell remoting, PsExec) |
@@ -59,9 +60,13 @@ This playbook provides **step-by-step investigation methods** and **log source c
 - Accounts showing unusual or excessive SIDHistory values.  
 - Event ID 4765 / 4766 (SID history added/removed).  
 
-### 4. Replication Abuse
-- DCSync attempts (Event ID 4662 with DS-Replication-Get-Changes on DCs).  
-- NTDS.dit extraction activity.  
+### 4. Replication Abuse (DCSync)
+- **Event ID 4662** on Domain Controllers with access to:
+  - `DS-Replication-Get-Changes`
+  - `DS-Replication-Get-Changes-All`
+  - `DS-Replication-Get-Changes-In-Filtered-Set`  
+- Non-DC accounts performing replication.  
+- PowerShell/command-line tools like `Mimikatz lsadump::dcsync` detected by EDR.  
 
 ### 5. Persistence & Exfiltration
 - Service accounts created in both forests.  
@@ -84,16 +89,19 @@ This playbook provides **step-by-step investigation methods** and **log source c
 - Pull **4728/4732** logs for the last 30 days from both forests.  
 - Build a timeline of **who was added/removed from sensitive groups**.  
 
-### D. Replication Monitoring
-- Inspect DC logs for **4662 events** with object type `replicating directory changes`.  
-- Look for accounts requesting replication outside normal patterns.  
+### D. Replication Monitoring (DCSync Focus)
+- Monitor DC logs for **4662 events** with replication permissions.  
+- Cross-check accounts initiating replication requests:
+  - Should only be **Domain Controllers** or authorized replication accounts.  
+  - Flag **any user/service account** attempting replication.  
+- Validate through **Netlogon/NTDS diagnostics logs** for unusual replication patterns.  
 
 ### E. EDR & Process Correlation
 - Hunt for PowerShell commands like:
   - `Invoke-Mimikatz`
   - `Invoke-Kerberoast`
   - `Get-DomainTrust`
-- Map to MITRE ATT&CK (T1558, T1482, T1078).  
+- Map to MITRE ATT&CK (T1558, T1482, T1078, T1003.006 [DCSync]).  
 
 ### F. Network & Proxy Analysis
 - Detect abnormal **Kerberos/LDAP traffic** between forests.  
@@ -117,6 +125,7 @@ This playbook provides **step-by-step investigation methods** and **log source c
 
 - **Segmentation**
   - Restrict traffic between forests to **only required ports/services**.  
+  - Implement monitoring on replication ports (135, 389, 445, 636, 3268).  
 
 ---
 
@@ -126,15 +135,29 @@ This playbook provides **step-by-step investigation methods** and **log source c
 - Identify which resources were accessed or exfiltrated.  
 - Update **SIEM detection rules** for:
   - Cross-forest authentication anomalies  
-  - DCSync attempts  
+  - DCSync attempts (4662 replication events)  
   - Group membership changes  
 - Conduct **purple team exercises** to validate new detections.  
 
 ---
 
+## ⚖️ MITRE ATT&CK Mapping
+
+| Tactic | Technique | ID | Notes |
+|--------|-----------|----|-------|
+| Credential Access | DCSync | T1003.006 | Unauthorized replication of AD credentials |
+| Persistence | Account manipulation | T1098 | Attackers create/modify cross-forest accounts |
+| Lateral Movement | Abuse of Trusts | T1484.002 | Using bidirectional trust to pivot |
+| Credential Access | Kerberoasting | T1558.003 | Cross-forest service ticket extraction |
+| Defense Evasion | Golden Ticket | T1558.001 | Forged Kerberos tickets used cross-forest |
+| Exfiltration | Data exfiltration over HTTPS/DNS | T1041/T1071 | Long-term data theft |
+
+---
+
 ## 📚 References
-- [MITRE ATT&CK – Abuse of Trusts (T1484.002)](https://attack.mitre.org/techniques/T1484/002/)  
-- [Microsoft – Monitoring Active Directory Trusts](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/forest-design-guide)  
+- [Microsoft Docs – Forest Trusts](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/forest-design-guide)  
+- [MITRE ATT&CK – DCSync (T1003.006)](https://attack.mitre.org/techniques/T1003/006/)  
 - [SpecterOps – Forest Trust Attack Paths](https://posts.specterops.io/)  
+- [AD Security – Detecting DCSync Attack](https://adsecurity.org/?p=1729)  
 
 ---
